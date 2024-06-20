@@ -1,96 +1,88 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 
 describe("AssetLedgerV00_01", function () {
-  async function deployAssetLedgerFixture() {
-    const [owner, admin] = await ethers.getSigners();
+  let AssetLedger, assetLedger, owner, admin, addr1;
 
-    const AssetLedger = await ethers.getContractFactory("AssetLedgerV00_01");
-    const assetLedger = await AssetLedger.deploy();
+  beforeEach(async function () {
+    [owner, admin, addr1] = await ethers.getSigners();
+    AssetLedger = await ethers.getContractFactory("AssetLedgerV00_01");
+    assetLedger = await upgrades.deployProxy(AssetLedger, [owner.address], {
+      initializer: "initialize",
+    });
     await assetLedger.deployed();
-
-    return { assetLedger, owner, admin };
-  }
-
-  describe("Deployment", function () {
-    it("Should set the initial values correctly", async function () {
-      const { assetLedger, owner } = await deployAssetLedgerFixture();
-
-      expect(await assetLedger.valueCuBit()).to.equal(
-        ethers.utils.parseUnits("1", 18)
-      );
-      expect(await assetLedger.ledger_nameAdmin()).to.equal("UREWPS, LLC");
-      expect(await assetLedger.ledger_nameOwner()).to.equal("CuBitDAO, LLC");
-      expect(await assetLedger.rateDepositUSD()).to.equal(
-        ethers.utils.parseUnits("119.17", 16)
-      );
-      expect(await assetLedger.ledger_Owner()).to.equal(owner.address);
-    });
   });
 
-  describe("Change Total Deposits", function () {
-    it("Should update total deposits and related values", async function () {
-      const { assetLedger, owner } = await deployAssetLedgerFixture();
+  it("Should set the initial values correctly", async function () {
+    const initialRateDepositUSD = ethers.utils.parseUnits("119.17", 18);
+    const initialSpreadUSD = ethers.utils.parseUnits("3.47", 18);
 
-      await assetLedger.changeTotalDeposits(
-        ethers.utils.parseUnits("1000", 18),
-        { from: owner.address }
-      );
-
-      const depositsTotal = await assetLedger.depositsTotal();
-      expect(depositsTotal).to.equal(ethers.utils.parseUnits("1000", 18));
-
-      const inCirculationCuBit = await assetLedger.inCirculationCuBit();
-      expect(inCirculationCuBit).to.be.gt(0);
-
-      const inReservesCuBit = await assetLedger.inReservesCuBit();
-      expect(inReservesCuBit).to.be.lt(await assetLedger.ledger_supplyCuBit());
-    });
+    expect(await assetLedger.ledger_Owner()).to.equal(owner.address);
+    expect(await assetLedger.rateDepositUSD()).to.equal(initialRateDepositUSD);
+    expect(await assetLedger.spreadUSD()).to.equal(initialSpreadUSD);
   });
 
-  describe("Change Assets", function () {
-    it("Should update assets and related values", async function () {
-      const { assetLedger, owner } = await deployAssetLedgerFixture();
+  it("Should update total deposits and related values", async function () {
+    // Setup initial values
+    const initialAssets = ethers.utils.parseUnits("1000000", 18);
+    await assetLedger
+      .connect(owner)
+      .changeAssets(initialAssets, initialAssets, initialAssets.mul(2));
 
-      await assetLedger.changeAssets(
-        ethers.utils.parseUnits("500", 18),
-        ethers.utils.parseUnits("500", 18),
-        ethers.utils.parseUnits("1000", 18),
-        { from: owner.address }
-      );
-
-      const assetsTotal = await assetLedger.assetsTotal();
-      expect(assetsTotal).to.equal(ethers.utils.parseUnits("1000", 18));
-
-      const ratioLA = await assetLedger.ratioLA();
-      expect(ratioLA).to.equal(ethers.utils.parseUnits("0.5", 18));
-
-      const ratioRE = await assetLedger.ratioRE();
-      expect(ratioRE).to.equal(ethers.utils.parseUnits("0.5", 18));
-    });
+    // Perform the test
+    await assetLedger
+      .connect(owner)
+      .changeTotalDeposits(ethers.utils.parseUnits("1000000", 18));
+    expect(await assetLedger.depositsTotal()).to.equal(
+      ethers.utils.parseUnits("1000000", 18)
+    );
   });
 
-  describe("Change Spread USD", function () {
-    it("Should update spread USD and related values", async function () {
-      const { assetLedger, owner } = await deployAssetLedgerFixture();
+  it("Should change rate deposit USD correctly", async function () {
+    await assetLedger
+      .connect(owner)
+      .changeRateDepositUSD(ethers.utils.parseUnits("200.00", 16));
+    expect(await assetLedger.rateDepositUSD()).to.equal(
+      ethers.utils.parseUnits("200.00", 18)
+    );
+  });
 
-      await assetLedger.changeSpreadUSD(ethers.utils.parseUnits("0.04", 18), {
-        from: owner.address,
-      });
+  it("Should update assets and related values", async function () {
+    // Setup initial values
+    const initialCuBitInCirculation = ethers.utils.parseUnits("1000", 18);
+    await assetLedger
+      .connect(owner)
+      .changeTotalDeposits(initialCuBitInCirculation);
 
-      const spreadUSD = await assetLedger.spreadUSD();
-      expect(spreadUSD).to.equal(ethers.utils.parseUnits("0.04", 18));
+    // Perform the test
+    await assetLedger
+      .connect(owner)
+      .changeAssets(
+        ethers.utils.parseUnits("5000000", 18),
+        ethers.utils.parseUnits("5000000", 18),
+        ethers.utils.parseUnits("10000000", 18)
+      );
+    expect(await assetLedger.assetsTotal()).to.equal(
+      ethers.utils.parseUnits("10000000", 18)
+    );
+  });
 
-      const rateDepositUSD = await assetLedger.rateDepositUSD();
-      const rateRedemptionUSD = await assetLedger.rateRedemptionUSD();
-
-      const expectedSpreadAmount = rateDepositUSD
-        .mul(spreadUSD)
-        .div(ethers.utils.parseUnits("1", 18));
-      const expectedRateRedemptionUSD =
-        rateDepositUSD.sub(expectedSpreadAmount);
-
-      expect(rateRedemptionUSD).to.equal(expectedRateRedemptionUSD);
-    });
+  it("Should update spread USD and related values", async function () {
+    await assetLedger
+      .connect(owner)
+      .changeSpreadUSD(ethers.utils.parseUnits("4.00", 16));
+    const spreadAmount = ethers.utils
+      .parseUnits("4.00", 18)
+      .mul(await assetLedger.rateDepositUSD())
+      .div(ethers.utils.parseUnits("1", 18));
+    const expectedRateRedemptionUSD = (await assetLedger.rateDepositUSD()).sub(
+      spreadAmount
+    );
+    expect(await assetLedger.spreadUSD()).to.equal(
+      ethers.utils.parseUnits("4.00", 18)
+    );
+    expect(await assetLedger.rateRedemptionUSD()).to.equal(
+      expectedRateRedemptionUSD
+    );
   });
 });

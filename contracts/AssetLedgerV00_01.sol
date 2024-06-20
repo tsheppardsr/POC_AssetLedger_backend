@@ -81,27 +81,27 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         ledger_Owner = initialOwner;
         ledger_supplyCuBit = 15000000e18;
         inReservesCuBit = ledger_supplyCuBit;
-        inCirculationCuBit = 0;
-        assetsTotal = 0;
-        assetsLA = 0;
+        inCirculationCuBit = 1;
+        assetsTotal = 11917e16;
+        assetsLA = 11917e16;
         assetsRE = 0;
-        ratioLA = 0;
+        ratioLA = 1e18;
         ratioRE = 0;
-        depositsTotal = 0;
+        depositsTotal = 11917e16;
         valueCuBit = 1e18;
         ledger_nameAdmin = "UREWPS, LLC";
         ledger_nameOwner = "CuBitDAO, LLC";
         ledger_contactAdmin = "UREWPS.com";
         ledger_mintLimit = 500000000e18;
         rateDepositUSD = 11917e16;
-        spreadUSD = 347e16;
+        spreadUSD = 347e14;
 
         // Debugging logs
         require(spreadUSD > 0, "SpreadUSD must be greater than zero");
         require(rateDepositUSD > 0, "RateDepositUSD must be greater than zero");
 
         uint256 spreadAmount = spreadUSD.mul(rateDepositUSD).div(DECIMALS);
-        require(rateDepositUSD >= spreadAmount, "RateDepositUSD must be greater than spread amount");
+        require(rateDepositUSD > spreadAmount, "RateDepositUSD must be greater than spread amount");
 
         rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
         require (rateRedemptionUSD > 0, "RateRedemptionUSD must be greater than zero");

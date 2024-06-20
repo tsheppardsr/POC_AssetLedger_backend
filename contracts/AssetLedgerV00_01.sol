@@ -58,6 +58,8 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
     uint256 public rateRedemptionUSD;
     uint256 public spreadUSD;
 
+    mapping(address => bool) public admins;
+
     event ValueChanged(uint256 newValue);
     event RateDepositUSDChanged(uint256 newRateDepositUSD, uint256 newRateRedemptionUSD);
     event LedgerStateChanged(LedgerState newState, string newStateString);
@@ -74,28 +76,35 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         _;
     }
 
+    constructor() {
+        owner = msg.sender;
+        admins[msg.sender] = true;
+    }
+    
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
 
         ledger_Owner = initialOwner;
-        ledger_supplyCuBit = 15000000e18;
-        inReservesCuBit = ledger_supplyCuBit;
-        inCirculationCuBit = 1;
-        assetsTotal = 11917e16;
-        assetsLA = 11917e16;
-        assetsRE = 0;
-        ratioLA = 1e18;
-        ratioRE = 0;
-        depositsTotal = 11917e16;
-        valueCuBit = 1e18;
+        ledger_supplyCuBit = 15000000 * 1e18; // 15 million CuBit
+        inCirculationCuBit = 1 * 1e18; // 1 CuBit in circulation
+        inReservesCuBit = ledger_supplyCuBit - inCirculationCuBit; // Remaining CuBit in reserves
+        assetsTotal = 11917 * 1e16; // 119.17 in total assets
+        assetsLA = 11917 * 1e16; // 119.17 in LA assets
+        assetsRE = 0; // No RE assets initially
+        ratioLA = 100 * 1e16; // 100% ratio in LA assets
+        ratioRE = 0; // 0% ratio in RE assets
+        depositsTotal = 11917 * 1e16; // 119.17 total deposits
+        valueCuBit = 11917 * 1e16; // 119.17 value of CuBit
         ledger_nameAdmin = "UREWPS, LLC";
         ledger_nameOwner = "CuBitDAO, LLC";
         ledger_contactAdmin = "UREWPS.com";
-        ledger_mintLimit = 500000000e18;
-        rateDepositUSD = 11917e16;
-        spreadUSD = 347e14;
-
+        ledger_mintLimit = 500000000 * 1e18; // 500 million mint limit
+        rateDepositUSD = 11917 * 1e16; // 119.17 USD deposit rate
+        spreadUSD = 347 * 1e15; // 3.47% spread
+        rateRedemptionUSD = rateDepositUSD - (rateDepositUSD * spreadUSD / 1e18); // Calculate redemption rate
+        ledgerState = LedgerState.Transition;
+ 
         // Debugging logs
         require(spreadUSD > 0, "SpreadUSD must be greater than zero");
         require(rateDepositUSD > 0, "RateDepositUSD must be greater than zero");
@@ -106,7 +115,6 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
         require (rateRedemptionUSD > 0, "RateRedemptionUSD must be greater than zero");
         require (rateRedemptionUSD < rateDepositUSD, "RateRedemptionUSD must be less than RateDepositUSD");
-        ledgerState = LedgerState.Transition;
 
         // Debugging logs
         emit SpreadUSDChanged(spreadUSD, rateRedemptionUSD);
@@ -122,7 +130,7 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         dateUpdated = block.timestamp;
     }
 
-    function changeValueCuBit() internal returns (bool) {
+    function changeValueCuBit() public returns (bool) {
         require(assetsTotal != 0, "Total Assets cannot be zero");
         require(inCirculationCuBit != 0, "CuBit in circulation cannot be zero");
 
@@ -133,14 +141,13 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         return true;
     }
 
-    function changeRateDepositUSD(uint256 _rateDepositUSD) internal returns (bool) {
-        require(_rateDepositUSD > 0, "RateDepositUSD must be greater than zero");
-        rateDepositUSD = _rateDepositUSD.mul(DECIMALS);
+    function changeRateDepositUSD(uint256 newRateDepositUSD) external onlyOwnerOrAdmin {
+        require(newRateDepositUSD > 0, "RateDepositUSD must be greater than zero");
+        rateDepositUSD = newRateDepositUSD.mul(DECIMALS);
         uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
         rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
         changeDateUpdated();
         emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
-        return true;
     }
 
     function changeTotalDeposits(uint256 newDeposits) public onlyOwnerOrAdmin returns (bool) {

@@ -14,25 +14,22 @@ pragma solidity >=0.4.22 <0.9.0;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/hardhat-upgrades/contracts-upgradeable/utils/SafeMathUpgradeable.sol";
 
 // Enum declaration for Ledger State
 enum LedgerState {
-    Transition, // zero
-    LAOut,      // one
-    REOut,      // two
-    Stable      // three      
-    // Add more states if needed
+    Transition,
+    LAOut,
+    REOut,
+    Stable
 }
 
 contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
+    using SafeMathUpgradeable for uint256;
 
-    // data structures
-
-    // Constants
-    uint256 public constant DECIMALS = 10**18; // Number of decimal places
+    uint256 public constant DECIMALS = 10**18;
     LedgerState public ledgerState;
-    
-    // State Variables
+
     address public ledger_Owner;
     address public ledger_Admin;
     string public ledger_nameAdmin;
@@ -61,7 +58,6 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
     uint256 public rateRedemptionUSD;
     uint256 public spreadUSD;
 
-    // Events
     event ValueChanged(uint256 newValue);
     event RateDepositUSDChanged(uint256 newRateDepositUSD, uint256 newRateRedemptionUSD);
     event LedgerStateChanged(LedgerState newState, string newStateString);
@@ -73,90 +69,96 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
     event SpreadUSDChanged(uint256 newSpread, uint256 rateRedemptionUSD);
     event SupplyCuBitUpdated(uint256 newSupply);
 
-    // Modifiers
     modifier onlyOwnerOrAdmin() {
         require(msg.sender == ledger_Owner || msg.sender == ledger_Admin, "Not authorized");
         _;
     }
 
-    // Initialize the contract
-    function initialize() public initializer {
-        ledger_supplyCuBit = 15000000e18; // supply from the coin  
-        inReservesCuBit = ledger_supplyCuBit; // all coins are in reserves
-        inCirculationCuBit = 0; // no coins are in circulation
-        assetsTotal = 0; // no assets
-        assetsLA = 0; // no liquid assets
-        assetsRE = 0; // no real estate assets
-        ratioLA = 0; // no liquid assets
-        ratioRE = 0; // no real estate assets
-        depositsTotal = 0; // no deposits
-        valueCuBit = 1e18; // value of 1 CuBit
+    function initialize(address initialOwner) public initializer {
+        __Ownable_init(initialOwner);
+        __UUPSUpgradeable_init();
+
+        ledger_Owner = initialOwner;
+        ledger_supplyCuBit = 15000000e18;
+        inReservesCuBit = ledger_supplyCuBit;
+        inCirculationCuBit = 0;
+        assetsTotal = 0;
+        assetsLA = 0;
+        assetsRE = 0;
+        ratioLA = 0;
+        ratioRE = 0;
+        depositsTotal = 0;
+        valueCuBit = 1e18;
         ledger_nameAdmin = "UREWPS, LLC";
         ledger_nameOwner = "CuBitDAO, LLC";
         ledger_contactAdmin = "UREWPS.com";
-        ledger_mintLimit = 500000000e18; 
-        rateDepositUSD = 11917e16; // 119.17 with 18 decimal places precision
-        spreadUSD = 347e16; // 3.47% with 18 decimal places precision
-        rateRedemptionUSD = rateDepositUSD - (spreadUSD * rateDepositUSD / DECIMALS); // USD received when redeeming 1 CuBit
-        ledgerState = LedgerState.Transition;  // initialize as Transition
+        ledger_mintLimit = 500000000e18;
+        rateDepositUSD = 11917e16;
+        spreadUSD = 347e16;
+
+        // Debugging logs
+        require(spreadUSD > 0, "SpreadUSD must be greater than zero");
+        require(rateDepositUSD > 0, "RateDepositUSD must be greater than zero");
+
+        uint256 spreadAmount = spreadUSD.mul(rateDepositUSD).div(DECIMALS);
+        require(rateDepositUSD >= spreadAmount, "RateDepositUSD must be greater than spread amount");
+
+        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
+        require (rateRedemptionUSD > 0, "RateRedemptionUSD must be greater than zero");
+        require (rateRedemptionUSD < rateDepositUSD, "RateRedemptionUSD must be less than RateDepositUSD");
+        ledgerState = LedgerState.Transition;
+
+        // Debugging logs
+        emit SpreadUSDChanged(spreadUSD, rateRedemptionUSD);
+        emit TotalDepositsChanged(depositsTotal, inCirculationCuBit, inReservesCuBit, valueCuBit);
     }
-    
-    // Check for empty string
+
     function isEmpty(string memory str) internal pure returns (bool) {
         bytes memory bytesStr = bytes(str);
         return bytesStr.length == 0;
     }
 
-    // Function to update dateUpdated to the current timestamp
     function changeDateUpdated() internal {
         dateUpdated = block.timestamp;
     }
 
-    // Change value of CuBit routine is called when assets or circulation change
     function changeValueCuBit() internal returns (bool) {
         require(assetsTotal != 0, "Total Assets cannot be zero");
         require(inCirculationCuBit != 0, "CuBit in circulation cannot be zero");
 
-        // Calculate new CuBit value
-        valueCuBit = assetsTotal / inCirculationCuBit; 
+        valueCuBit = assetsTotal.div(inCirculationCuBit);
 
-        // Changes in value of CuBit require changes in the exchange rates
-        changeRateDepositUSD();
-        emit ValueChanged(valueCuBit);
-        return true; // Indicate successful execution
+        changeRateDepositUSD(uint256 rateDepositUSD);
+        emit ValueChanged(rateDepositUSD);
+        return true;
     }
 
-    // Update the rateDepositUSD and rateRedemptionUSD based on the current assetsTotal and inCirculationCuBit
-    function changeRateDepositUSD() internal returns (bool) {
-        rateDepositUSD = valueCuBit; 
-        uint256 spreadAmount = rateDepositUSD * spreadUSD / DECIMALS;
-        rateRedemptionUSD = rateDepositUSD - spreadAmount; // USD received when redeeming 1 CuBit
+    function changeRateDepositUSD(uint256 _rateDepositUSD) internal returns (bool) {
+        rateDepositUSD = _rateDepositUSD.mul(DECIMALS);
+        uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
+        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
         changeDateUpdated();
         emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Change total deposits alters the CuBit in Circulation which, in turn,
-    // alters the value of CuBit, deposits rate, and redemption rate
     function changeTotalDeposits(uint256 newDeposits) public onlyOwnerOrAdmin returns (bool) {
         require(newDeposits >= 0, "Invalid Deposits value");
         depositsTotal = newDeposits;
-        inCirculationCuBit = depositsTotal / rateDepositUSD;
-        inReservesCuBit = ledger_supplyCuBit - inCirculationCuBit;
+        inCirculationCuBit = depositsTotal.div(rateDepositUSD);
+        inReservesCuBit = ledger_supplyCuBit.sub(inCirculationCuBit);
         changeValueCuBit();
         changeDateUpdated();
         emit TotalDepositsChanged(depositsTotal, inCirculationCuBit, inReservesCuBit, valueCuBit);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Change assets combined
-    function changeAssets(uint256 newAssetsLA, uint256 newAssetsRE, uint256 newAssetsTotal) 
-    public onlyOwnerOrAdmin returns (bool) {
+    function changeAssets(uint256 newAssetsLA, uint256 newAssetsRE, uint256 newAssetsTotal) public onlyOwnerOrAdmin returns (bool) {
         require(newAssetsTotal >= 0, "Total Assets must be > zero");
         require(newAssetsLA >= 0, "LA Assets must be > zero");
-        require(newAssetsTotal == newAssetsLA + newAssetsRE, "Sum of RE and LA assets must equal Total Assets");
+        require(newAssetsTotal == newAssetsLA.add(newAssetsRE), "Sum of RE and LA assets must equal Total Assets");
         assetsTotal = newAssetsTotal;
-        assetsLA = newAssetsLA; 
+        assetsLA = newAssetsLA;
         ratioLA = calculateRatio(assetsLA, assetsTotal);
 
         if (newAssetsRE > 0) {
@@ -171,27 +173,23 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         return true;
     }
 
-    // Function to calculate asset ratio
     function calculateRatio(uint256 assetAmount, uint256 totalAssets) internal pure returns (uint256) {
         require(totalAssets > 0, "Total assets must be greater than zero");
         require(assetAmount <= totalAssets, "Assets in ratio cannot exceed total assets");
-        return (assetAmount * DECIMALS) / totalAssets;
+        return assetAmount.mul(DECIMALS).div(totalAssets);
     }
 
-    // Updates the USD spread value used for USD deposits and redemptions
     function changeSpreadUSD(uint256 newSpread) public onlyOwnerOrAdmin returns (bool) {
         require(newSpread > 0, "Spread amount must be greater than zero");
         spreadUSD = newSpread;
-        uint256 spreadAmount = (rateDepositUSD * spreadUSD) / DECIMALS;
-        rateRedemptionUSD = rateDepositUSD - spreadAmount; // USD received when redeeming 1 CuBit
+        uint256 spreadAmount = (rateDepositUSD.mul(spreadUSD)).div(DECIMALS);
+        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
         changeDateUpdated();
         emit SpreadUSDChanged(spreadUSD, rateRedemptionUSD);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Functions to modify proposal information
-    function changeProposal(bool newProposalPresent, string memory newProposalLocation, uint256 newProposalDate) 
-    public onlyOwnerOrAdmin returns (bool) {
+    function changeProposal(bool newProposalPresent, string memory newProposalLocation, uint256 newProposalDate) public onlyOwnerOrAdmin returns (bool) {
         if (!newProposalPresent) {
             proposalPresent = false;
             proposalLocation = "";
@@ -204,44 +202,40 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         }
         changeDateUpdated();
         emit ProposalPresentChanged(proposalPresent, proposalLocation, proposalDate);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Functions to modify audit information
-    function changeAudit(uint256 newDateLastAudit, string memory newLocationLastAudit, string memory newAuditor) 
-    public onlyOwnerOrAdmin returns (bool) {
+    function changeAudit(uint256 newDateLastAudit, string memory newLocationLastAudit, string memory newAuditor) public onlyOwnerOrAdmin returns (bool) {
         require(newDateLastAudit > 0, "New audit date cannot be empty");
         require(newDateLastAudit >= dateLastAudit, "New audit date cannot be older than the last audit.");
         dateLastAudit = newDateLastAudit;
 
         if (!isEmpty(newLocationLastAudit)) {
-            locationLastAudit = newLocationLastAudit;   
-        }     
+            locationLastAudit = newLocationLastAudit;
+        }
 
         if (!isEmpty(newAuditor)) {
             nameAuditor = newAuditor;
         }
         changeDateUpdated();
         emit LocationLastAuditChanged(dateLastAudit, locationLastAudit);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Function to change the contact admin
     function changeContactAdmin(string memory newContactAdmin) public onlyOwnerOrAdmin returns (bool) {
         require(!isEmpty(newContactAdmin), "Contact Admin cannot be empty");
         ledger_contactAdmin = newContactAdmin;
         changeDateUpdated();
         emit ContactAdminChanged(ledger_contactAdmin);
-        return true; // Indicate successful execution
+        return true;
     }
 
-    // Functions to view the Ledger in parts
     function viewLedgerPart1() public view returns (
         string memory, string memory, string memory, uint256,
         uint256, uint256, uint256, uint256
     ) {
         return (
-            ledger_nameAdmin, ledger_nameOwner, ledger_contactAdmin, dateUpdated, 
+            ledger_nameAdmin, ledger_nameOwner, ledger_contactAdmin, dateUpdated,
             ledger_mintLimit, valueCuBit, inCirculationCuBit, inReservesCuBit
         );
     }
@@ -260,33 +254,24 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         LedgerState, uint256, uint256,
         uint256, uint256,
         uint256, uint256,
-        uint256, uint256, uint256 
+        uint256, uint256, uint256
     ) {
         return (
             ledgerState, assetsRE, assetsLA,
-            assetsTotal, depositsTotal, 
+            assetsTotal, depositsTotal,
             ratioRE, ratioLA,
-            rateDepositUSD, rateRedemptionUSD, spreadUSD 
+            rateDepositUSD, rateRedemptionUSD, spreadUSD
         );
     }
 
-    // Authorization function    
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwnerOrAdmin  {
-    }
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwnerOrAdmin {}
 
-    // Function to update ledger_supplyCuBit from CuBitTokenv01.sol
     function updateSupplyCuBit(uint256 totalSupply) public {
         ledger_supplyCuBit = totalSupply;
         emit SupplyCuBitUpdated(ledger_supplyCuBit);
     }
-    
-    // inserted during testing
-    function setOwner(address newOwner) public onlyOwnerOrAdmin {
-        ledger_Owner = newOwner;
-    }
-    
+
     function getLedgerState() public view returns (LedgerState) {
         return ledgerState;
     }
 }
-

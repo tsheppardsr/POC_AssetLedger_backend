@@ -15,14 +15,12 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 // version x also sets the ledger state to Transition
 // version x also fixes the USD Deposit rate at 119.17 USD per CuBit
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 contract AssetLedgerProxyV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
     address private _assetLedger;
 
-    function initialize(address assetLedger) public initializer {
-        __Ownable_init();
+    function initialize(address assetLedger, address initialOwner) public initializer {
+        __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
         _assetLedger = assetLedger;
     }

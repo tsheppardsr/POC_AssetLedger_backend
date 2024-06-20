@@ -126,14 +126,15 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         require(assetsTotal != 0, "Total Assets cannot be zero");
         require(inCirculationCuBit != 0, "CuBit in circulation cannot be zero");
 
-        valueCuBit = assetsTotal.div(inCirculationCuBit);
+        valueCuBit = assetsTotal.div(inCirculationCuBit); // Assuming assetsTotal is in USD, this gives the USD value of one CuBit
 
-        changeRateDepositUSD(uint256 rateDepositUSD);
-        emit ValueChanged(rateDepositUSD);
+        changeRateDepositUSD(valueCuBit);
+        emit ValueChanged(valueCuBit);
         return true;
     }
 
     function changeRateDepositUSD(uint256 _rateDepositUSD) internal returns (bool) {
+        require(_rateDepositUSD > 0, "RateDepositUSD must be greater than zero");
         rateDepositUSD = _rateDepositUSD.mul(DECIMALS);
         uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
         rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);

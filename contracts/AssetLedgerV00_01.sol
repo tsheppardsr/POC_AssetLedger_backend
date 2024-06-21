@@ -80,6 +80,15 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         owner = msg.sender;
         admins[msg.sender] = true;
     }
+
+    function changeRateDepositUSD(uint256 newRateDepositUSD) external onlyOwnerOrAdmin {
+        require(newRateDepositUSD > 0, "RateDepositUSD must be greater than zero");
+        rateDepositUSD = newRateDepositUSD.mul(DECIMALS);
+        uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
+        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
+        changeDateUpdated();
+        emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
+    }
     
     function initialize(address initialOwner) public initializer {
         __Ownable_init(initialOwner);
@@ -141,14 +150,7 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         return true;
     }
 
-    function changeRateDepositUSD(uint256 newRateDepositUSD) external onlyOwnerOrAdmin {
-        require(newRateDepositUSD > 0, "RateDepositUSD must be greater than zero");
-        rateDepositUSD = newRateDepositUSD.mul(DECIMALS);
-        uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
-        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
-        changeDateUpdated();
-        emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
-    }
+
 
     function changeTotalDeposits(uint256 newDeposits) public onlyOwnerOrAdmin returns (bool) {
         require(newDeposits >= 0, "Invalid Deposits value");

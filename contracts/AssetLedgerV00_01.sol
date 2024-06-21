@@ -29,7 +29,8 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
 
     uint256 public constant DECIMALS = 10**18;
     LedgerState public ledgerState;
-
+    address public owner;
+    address public admin;
     address public ledger_Owner;
     address public ledger_Admin;
     string public ledger_nameAdmin;
@@ -58,7 +59,8 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
     uint256 public rateRedemptionUSD;
     uint256 public spreadUSD;
 
-    mapping(address => bool) public admins;
+    bool public initialized;
+    
 
     event ValueChanged(uint256 newValue);
     event RateDepositUSDChanged(uint256 newRateDepositUSD, uint256 newRateRedemptionUSD);
@@ -75,26 +77,14 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         require(msg.sender == ledger_Owner || msg.sender == ledger_Admin, "Not authorized");
         _;
     }
-
-    constructor() {
-        owner = msg.sender;
-        admins[msg.sender] = true;
-    }
-
-    function changeRateDepositUSD(uint256 newRateDepositUSD) external onlyOwnerOrAdmin {
-        require(newRateDepositUSD > 0, "RateDepositUSD must be greater than zero");
-        rateDepositUSD = newRateDepositUSD.mul(DECIMALS);
-        uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
-        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
-        changeDateUpdated();
-        emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
-    }
     
     function initialize(address initialOwner) public initializer {
+        require(!initialized, "Contract is already initialized");
         __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
 
         ledger_Owner = initialOwner;
+        ledger_Admin = msg.sender;
         ledger_supplyCuBit = 15000000 * 1e18; // 15 million CuBit
         inCirculationCuBit = 1 * 1e18; // 1 CuBit in circulation
         inReservesCuBit = ledger_supplyCuBit - inCirculationCuBit; // Remaining CuBit in reserves
@@ -128,8 +118,17 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         // Debugging logs
         emit SpreadUSDChanged(spreadUSD, rateRedemptionUSD);
         emit TotalDepositsChanged(depositsTotal, inCirculationCuBit, inReservesCuBit, valueCuBit);
+        initialized = true;
     }
-
+    
+    function changeRateDepositUSD(uint256 newRateDepositUSD) public onlyOwnerOrAdmin {
+        require(newRateDepositUSD > 0, "RateDepositUSD must be greater than zero");
+        rateDepositUSD = newRateDepositUSD.mul(DECIMALS);
+        uint256 spreadAmount = rateDepositUSD.mul(spreadUSD).div(DECIMALS);
+        rateRedemptionUSD = rateDepositUSD.sub(spreadAmount);
+        changeDateUpdated();
+        emit RateDepositUSDChanged(rateDepositUSD, rateRedemptionUSD);
+    }
     function isEmpty(string memory str) internal pure returns (bool) {
         bytes memory bytesStr = bytes(str);
         return bytesStr.length == 0;
@@ -149,8 +148,6 @@ contract AssetLedgerV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable
         emit ValueChanged(valueCuBit);
         return true;
     }
-
-
 
     function changeTotalDeposits(uint256 newDeposits) public onlyOwnerOrAdmin returns (bool) {
         require(newDeposits >= 0, "Invalid Deposits value");

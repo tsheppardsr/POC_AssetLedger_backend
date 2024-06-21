@@ -17,12 +17,28 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 
 contract AssetLedgerProxyV00_01 is Initializable, UUPSUpgradeable, OwnableUpgradeable {
-    address private _assetLedger;
+    address private _assetLedger; // Main contract address
+    address public implementation;
+    address public owner;
+    address public admin;
+    bool public initialized;
+    
+    modifier onlyOwnerOrAdmin() {
+        require(msg.sender == owner || msg.sender == admin, "Not authorized");
+        _;
+    }
+
+    constructor(address _assetLedger) {
+        owner = msg.sender;
+        implementation = _assetLedger;
+        initialized = false;
+    }
 
     function initialize(address assetLedger, address initialOwner) public initializer {
         __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
         _assetLedger = assetLedger;
+        initialized = true;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
